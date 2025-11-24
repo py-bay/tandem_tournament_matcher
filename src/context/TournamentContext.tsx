@@ -1,0 +1,244 @@
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { Player, Team, TournamentState, MatchResult } from '../lib/types';
+import { generateRound } from '../lib/matchmaking';
+
+interface TournamentContextType {
+    state: TournamentState;
+    addPlayer: (name: string) => void;
+    removePlayer: (id: string) => void;
+    createTeams: (pairs: [string, string][]) => void;
+    startTournament: () => void;
+    nextRound: () => void;
+    submitMatchResult: (matchId: string, result: MatchResult) => void;
+    disbandTeam: (teamId: string) => void;
+    resetTournament: () => void;
+}
+
+const TournamentContext = createContext<TournamentContextType | undefined>(undefined);
+
+const INITIAL_STATE: TournamentState = {
+    name: 'Tandem Tournament',
+    players: [],
+    teams: [],
+    rounds: [],
+    currentRound: 0,
+    status: 'setup',
+};
+
+export function TournamentProvider({ children }: { children: React.ReactNode }) {
+    const [state, setState] = useState<TournamentState>(() => {
+        const saved = localStorage.getItem('tandem_tournament_state');
+        return saved ? JSON.parse(saved) : INITIAL_STATE;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('tandem_tournament_state', JSON.stringify(state));
+    }, [state]);
+
+    const addPlayer = (name: string) => {
+        const newPlayer: Player = {
+            id: crypto.randomUUID(),
+            name,
+            individualScore: 0,
+            matchesPlayed: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+        };
+        setState(prev => ({ ...prev, players: [...prev.players, newPlayer] }));
+    };
+
+    const removePlayer = (id: string) => {
+        setState(prev => ({
+            ...prev,
+            players: prev.players.filter(p => p.id !== id)
+        }));
+    };
+
+    const createTeams = (pairs: [string, string][]) => {
+        const newTeams: Team[] = pairs.map(([p1Id, p2Id]) => {
+            const p1 = state.players.find(p => p.id === p1Id);
+            const p2 = state.players.find(p => p.id === p2Id);
+            return {
+                id: crypto.randomUUID(),
+                name: `${p1?.name} & ${p2?.name}`,
+                player1Id: p1Id,
+                player2Id: p2Id,
+                teamScore: 0,
+                matchPoints: 0,
+                buchholz: 0,
+                matchesPlayed: 0,
+                active: true
+            };
+        });
+        setState(prev => ({ ...prev, teams: [...prev.teams, ...newTeams] }));
+    };
+
+    const disbandTeam = (teamId: string) => {
+        setState(prev => ({
+            ...prev,
+            teams: prev.teams.filter(t => t.id !== teamId)
+        }));
+    };
+
+    const startTournament = () => {
+        if (state.teams.length < 2) return;
+        const round1 = generateRound(1, state.teams, []);
+        setState(prev => ({
+            ...prev,
+            status: 'active',
+            currentRound: 1,
+            rounds: [{ number: 1, matches: round1, isCompleted: false }]
+        }));
+    };
+
+    const updateStats = (currentState: TournamentState) => {
+        // Reset stats to recalculate from scratch (safest way)
+        const playersMap = new Map(currentState.players.map(p => [p.id, { ...p, individualScore: 0, wins: 0, losses: 0, draws: 0, matchesPlayed: 0 }]));
+        const teamsMap = new Map(currentState.teams.map(t => [t.id, { ...t, teamScore: 0, matchPoints: 0, matchesPlayed: 0, buchholz: 0 }]));
+
+        currentState.rounds.forEach(round => {
+            round.matches.forEach(match => {
+                if (!match.isCompleted || !match.result) return;
+
+                const teamA = teamsMap.get(match.teamAId);
+                const teamB = teamsMap.get(match.teamBId); // Might be undefined if BYE
+
+                if (teamA) {
+                    // Team Stats
+                    const points = match.result.board1 + match.result.board2;
+                    teamA.teamScore += points;
+                    teamA.matchesPlayed += 1;
+                    if (points > 1) teamA.matchPoints += 2; // Win
+                    else if (points === 1) teamA.matchPoints += 1; // Draw
+
+                    // Player Stats (Assuming Board 1 is Player 1, Board 2 is Player 2 for simplicity? 
+                    // Or do we track who played which board? 
+                    // For MVP, let's assume P1 plays B1, P2 plays B2. 
+                    // Ideally we should let users swap, but let's stick to fixed boards for now or just add points to both?)
+
+                    // Actually, in Tandem, you swap colors but partners stay. 
+                    // Let's assume Player 1 is always Board A, Player 2 is Board B for the team.
+
+                    const p1 = playersMap.get(teamA.player1Id);
+                    const p2 = playersMap.get(teamA.player2Id);
+
+                    if (p1) {
+                        p1.matchesPlayed += 1;
+                        p1.individualScore += match.result.board1;
+                        if (match.result.board1 === 1) p1.wins += 1;
+                        else if (match.result.board1 === 0.5) p1.draws += 1;
+                        else p1.losses += 1;
+                    }
+                    if (p2) {
+                        p2.matchesPlayed += 1;
+                        p2.individualScore += match.result.board2;
+                        if (match.result.board2 === 1) p2.wins += 1;
+                        else if (match.result.board2 === 0.5) p2.draws += 1;
+                        else p2.losses += 1;
+                    }
+                }
+
+                if (teamB && match.teamBId !== 'BYE') {
+                    const points = (1 - match.result.board1) + (1 - match.result.board2); // Inverted result
+                    teamB.teamScore += points;
+                    teamB.matchesPlayed += 1;
+                    if (points > 1) teamB.matchPoints += 2;
+                    else if (points === 1) teamB.matchPoints += 1;
+
+                    const p1 = playersMap.get(teamB.player1Id);
+                    const p2 = playersMap.get(teamB.player2Id);
+
+                    // Opponent Board 1 result is 1 - match.result.board1
+                    const b1Res = 1 - match.result.board1;
+                    const b2Res = 1 - match.result.board2;
+
+                    if (p1) {
+                        p1.matchesPlayed += 1;
+                        p1.individualScore += b1Res;
+                        if (b1Res === 1) p1.wins += 1;
+                        else if (b1Res === 0.5) p1.draws += 1;
+                        else p1.losses += 1;
+                    }
+                    if (p2) {
+                        p2.matchesPlayed += 1;
+                        p2.individualScore += b2Res;
+                        if (b2Res === 1) p2.wins += 1;
+                        else if (b2Res === 0.5) p2.draws += 1;
+                        else p2.losses += 1;
+                    }
+                }
+            });
+        });
+
+        // Calculate Buchholz (Sum of opponents' team scores)
+        // We need the updated scores first, which we have in teamsMap now.
+        currentState.rounds.forEach(round => {
+            round.matches.forEach(match => {
+                if (match.teamBId === 'BYE') return;
+                const teamA = teamsMap.get(match.teamAId);
+                const teamB = teamsMap.get(match.teamBId);
+                if (teamA && teamB) {
+                    teamA.buchholz += teamB.teamScore;
+                    teamB.buchholz += teamA.teamScore;
+                }
+            });
+        });
+
+        return {
+            ...currentState,
+            players: Array.from(playersMap.values()),
+            teams: Array.from(teamsMap.values())
+        };
+    };
+
+    const submitMatchResult = (matchId: string, result: MatchResult) => {
+        setState(prev => {
+            const newRounds = prev.rounds.map(r => ({
+                ...r,
+                matches: r.matches.map(m => m.id === matchId ? { ...m, result, isCompleted: true } : m)
+            }));
+
+            // Check if round is complete
+            const currentRoundObj = newRounds.find(r => r.number === prev.currentRound);
+            if (currentRoundObj) {
+                currentRoundObj.isCompleted = currentRoundObj.matches.every(m => m.isCompleted);
+            }
+
+            const stateWithResults = { ...prev, rounds: newRounds };
+            return updateStats(stateWithResults);
+        });
+    };
+
+    const nextRound = () => {
+        setState(prev => {
+            const nextRoundNum = prev.currentRound + 1;
+            const newMatches = generateRound(nextRoundNum, prev.teams, prev.rounds);
+            return {
+                ...prev,
+                currentRound: nextRoundNum,
+                rounds: [...prev.rounds, { number: nextRoundNum, matches: newMatches, isCompleted: false }]
+            };
+        });
+    };
+
+    const resetTournament = () => {
+        if (confirm("Are you sure? All data will be lost.")) {
+            setState(INITIAL_STATE);
+        }
+    };
+
+    return (
+        <TournamentContext.Provider value={{ state, addPlayer, removePlayer, createTeams, startTournament, nextRound, submitMatchResult, disbandTeam, resetTournament }}>
+            {children}
+        </TournamentContext.Provider>
+    );
+}
+
+export function useTournament() {
+    const context = useContext(TournamentContext);
+    if (context === undefined) {
+        throw new Error('useTournament must be used within a TournamentProvider');
+    }
+    return context;
+}
