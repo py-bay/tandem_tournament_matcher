@@ -6,19 +6,31 @@ import { TeamBuilder } from './components/TeamBuilder';
 import { MatchCard } from './components/MatchCard';
 import { StandingsTable } from './components/StandingsTable';
 import { Trophy, AlertCircle } from 'lucide-react';
+import clsx from 'clsx';
 
 function SetupPage() {
   const { state } = useTournament();
 
-  if (state.status === 'active') {
+  if (state.status === 'active' || state.status === 'completed') {
     return (
       <div className="space-y-6">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+        <div className={clsx(
+          "border rounded-lg p-4 flex items-start gap-3",
+          state.status === 'active' ? "bg-blue-50 border-blue-200" : "bg-green-50 border-green-200"
+        )}>
+          {state.status === 'active' ? (
+            <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+          ) : (
+            <Trophy className="w-5 h-5 text-green-600 mt-0.5" />
+          )}
           <div>
-            <h3 className="font-semibold text-blue-900">Tournament in Progress</h3>
-            <p className="text-sm text-blue-700 mt-1">
-              The tournament is currently active. You cannot add players or change teams without resetting.
+            <h3 className={clsx("font-semibold", state.status === 'active' ? "text-blue-900" : "text-green-900")}>
+              {state.status === 'active' ? 'Tournament in Progress' : 'Tournament Completed'}
+            </h3>
+            <p className={clsx("text-sm mt-1", state.status === 'active' ? "text-blue-700" : "text-green-700")}>
+              {state.status === 'active'
+                ? 'The tournament is currently active. You cannot add players or change teams without resetting.'
+                : 'The tournament has finished. Reset to start a new one.'}
             </p>
           </div>
         </div>
@@ -54,6 +66,19 @@ function TournamentPage() {
         <h2 className="text-xl font-semibold text-slate-800">Tournament Not Started</h2>
         <p className="text-slate-500 mt-2 mb-6">Complete the setup to begin matches.</p>
         <a href="/" className="btn btn-primary inline-flex">Go to Setup</a>
+      </div>
+    );
+  }
+
+  if (state.status === 'completed') {
+    return (
+      <div className="space-y-6">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
+          <Trophy className="w-16 h-16 text-green-600 mx-auto mb-4" />
+          <h2 className="text-3xl font-bold text-green-900 mb-2">Tournament Completed!</h2>
+          <p className="text-green-700 text-lg">Congratulations to the winners!</p>
+        </div>
+        <StandingsTable />
       </div>
     );
   }

@@ -7,7 +7,7 @@ interface TournamentContextType {
     addPlayer: (name: string) => void;
     removePlayer: (id: string) => void;
     createTeams: (pairs: [string, string][]) => void;
-    startTournament: () => void;
+    startTournament: (mode: 'swiss' | 'round_robin', totalRounds?: number) => void;
     nextRound: () => void;
     submitMatchResult: (matchId: string, result: MatchResult) => void;
     disbandTeam: (teamId: string) => void;
@@ -23,6 +23,7 @@ const INITIAL_STATE: TournamentState = {
     rounds: [],
     currentRound: 0,
     status: 'setup',
+    mode: 'swiss',
 };
 
 export function TournamentProvider({ children }: { children: React.ReactNode }) {
@@ -81,13 +82,20 @@ export function TournamentProvider({ children }: { children: React.ReactNode }) 
         }));
     };
 
-    const startTournament = () => {
+    const startTournament = (mode: 'swiss' | 'round_robin', totalRounds?: number) => {
         if (state.teams.length < 2) return;
-        const round1 = generateRound(1, state.teams, []);
+
+        // For Round Robin, total rounds is usually teams.length - 1 (if even) or teams.length (if odd)
+        // But we can let the generator handle the logic or just pass it through.
+        // If mode is round_robin, we might ignore totalRounds or use it as a limit.
+
+        const round1 = generateRound(1, state.teams, [], mode);
         setState(prev => ({
             ...prev,
             status: 'active',
             currentRound: 1,
+            mode,
+            totalRounds,
             rounds: [{ number: 1, matches: round1, isCompleted: false }]
         }));
     };
@@ -212,8 +220,21 @@ export function TournamentProvider({ children }: { children: React.ReactNode }) 
 
     const nextRound = () => {
         setState(prev => {
+            // Check limits
+            let maxRounds = Infinity;
+            if (prev.mode === 'swiss' && prev.totalRounds) {
+                maxRounds = prev.totalRounds;
+            } else if (prev.mode === 'round_robin') {
+                const n = prev.teams.filter(t => t.active).length;
+                maxRounds = n % 2 === 0 ? n - 1 : n;
+            }
+
+            if (prev.currentRound >= maxRounds) {
+                return { ...prev, status: 'completed' };
+            }
+
             const nextRoundNum = prev.currentRound + 1;
-            const newMatches = generateRound(nextRoundNum, prev.teams, prev.rounds);
+            const newMatches = generateRound(nextRoundNum, prev.teams, prev.rounds, prev.mode);
             return {
                 ...prev,
                 currentRound: nextRoundNum,

@@ -7,6 +7,9 @@ export function TeamBuilder() {
     const { state, createTeams, disbandTeam, startTournament } = useTournament();
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+    const [mode, setMode] = useState<'swiss' | 'round_robin'>('swiss');
+    const [rounds, setRounds] = useState<number>(5);
+
     // Filter players who are already in a team
     const teamedPlayerIds = new Set(state.teams.flatMap(t => [t.player1Id, t.player2Id]));
     const availablePlayers = state.players.filter(p => !teamedPlayerIds.has(p.id));
@@ -26,6 +29,10 @@ export function TeamBuilder() {
             createTeams([[selectedIds[0], selectedIds[1]]]);
             setSelectedIds([]);
         }
+    };
+
+    const handleStart = () => {
+        startTournament(mode, mode === 'swiss' ? rounds : undefined);
     };
 
     return (
@@ -68,7 +75,19 @@ export function TeamBuilder() {
             <div className="flex items-center justify-between border-t border-slate-100 pt-4">
                 <div className="text-sm text-slate-500">
                     {selectedIds.length === 2 ? (
-                        <span className="text-blue-600 font-medium">Ready to pair!</span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-blue-600 font-medium">Ready!</span>
+                            <span className="text-xs text-slate-400">
+                                {state.players.find(p => p.id === selectedIds[0])?.name} (B1) & {state.players.find(p => p.id === selectedIds[1])?.name} (B2)
+                            </span>
+                            <button
+                                onClick={() => setSelectedIds(prev => [prev[1], prev[0]])}
+                                className="text-xs text-blue-500 hover:underline"
+                                title="Swap Board 1/2"
+                            >
+                                (Swap)
+                            </button>
+                        </div>
                     ) : (
                         <span>Select {2 - selectedIds.length} more player{selectedIds.length !== 1 && 's'}</span>
                     )}
@@ -115,10 +134,41 @@ export function TeamBuilder() {
                 </div>
             </div>
 
+            {/* Tournament Settings */}
+            <div className="space-y-4 pt-4 border-t border-slate-200">
+                <h3 className="text-sm font-medium text-slate-700">Tournament Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Mode</label>
+                        <select
+                            value={mode}
+                            onChange={(e) => setMode(e.target.value as 'swiss' | 'round_robin')}
+                            className="w-full rounded-lg border-slate-200 text-sm focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="swiss">Swiss System</option>
+                            <option value="round_robin">Round Robin (Each vs Each)</option>
+                        </select>
+                    </div>
+                    {mode === 'swiss' && (
+                        <div>
+                            <label className="block text-xs font-medium text-slate-500 mb-1">Number of Rounds</label>
+                            <input
+                                type="number"
+                                min={1}
+                                max={20}
+                                value={rounds}
+                                onChange={(e) => setRounds(parseInt(e.target.value) || 1)}
+                                className="w-full rounded-lg border-slate-200 text-sm focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Start Tournament */}
             <div className="pt-6 border-t border-slate-200">
                 <button
-                    onClick={startTournament}
+                    onClick={handleStart}
                     disabled={state.teams.length < 2}
                     className="w-full btn btn-primary justify-center py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >

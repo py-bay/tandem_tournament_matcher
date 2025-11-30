@@ -48,4 +48,6 @@ export interface TournamentState {
   rounds: Round[];
   currentRound: number;
   status: 'setup' | 'active' | 'completed';
+  mode: 'swiss' | 'round_robin';
+  totalRounds?: number;
 }

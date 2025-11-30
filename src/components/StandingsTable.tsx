@@ -43,6 +43,21 @@ export function StandingsTable() {
                     <User className="w-4 h-4" />
                     Player Stats
                 </button>
+                <button
+                    onClick={() => {
+                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+                        const downloadAnchorNode = document.createElement('a');
+                        downloadAnchorNode.setAttribute("href", dataStr);
+                        downloadAnchorNode.setAttribute("download", "tournament_export.json");
+                        document.body.appendChild(downloadAnchorNode); // required for firefox
+                        downloadAnchorNode.click();
+                        downloadAnchorNode.remove();
+                    }}
+                    className="px-4 py-3 text-sm font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border-l border-slate-200 transition-colors"
+                    title="Export JSON"
+                >
+                    Export
+                </button>
             </div>
 
             <div className="overflow-x-auto">

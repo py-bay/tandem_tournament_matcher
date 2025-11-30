@@ -1,6 +1,116 @@
 import type { Team, Match, Round } from './types';
 
-export function generateRound(roundNumber: number, teams: Team[], previousRounds: Round[]): Match[] {
+export function generateRound(roundNumber: number, teams: Team[], previousRounds: Round[], mode: 'swiss' | 'round_robin' = 'swiss'): Match[] {
+    if (mode === 'round_robin') {
+        return generateRoundRobin(roundNumber, teams);
+    } else {
+        return generateSwissRound(roundNumber, teams, previousRounds);
+    }
+}
+
+function generateRoundRobin(roundNumber: number, teams: Team[]): Match[] {
+    // Stable sort to ensure consistent indices
+    const sortedTeams = [...teams].filter(t => t.active).sort((a, b) => a.id.localeCompare(b.id));
+
+    if (sortedTeams.length % 2 !== 0) {
+        // Add a dummy team for Bye logic if needed, or just handle odd count
+        // For simplicity, let's treat the "Bye" as a virtual team if we want to show it,
+        // or just skip the pairing.
+        // The user wants to see the Bye usually.
+        // Let's add a placeholder for the algorithm
+        // But we can't easily add a "fake" team that matches the Team interface without clutter.
+        // Let's just use indices.
+    }
+
+    const n = sortedTeams.length;
+    const isOdd = n % 2 !== 0;
+
+    // Indices 0 to totalSlots - 1
+    // If isOdd, the last slot is the "Bye" slot.
+
+    const matches: Match[] = [];
+
+    // Berger table / Circle method
+    // Fixed position: 0
+    // Rotating positions: 1 .. totalSlots - 1
+
+    // For round r (1-based):
+    // Shift amount = r - 1
+
+    // Map current positions to original indices
+    // Position 0 is always index 0 (if not odd? If odd, index 0 is just a team)
+    // Actually, let's just use the standard algorithm:
+    // Array of team indices: [0, 1, 2, ..., n-1] (plus a -1 for bye if odd)
+
+    let indices = sortedTeams.map((_, i) => i);
+    if (isOdd) indices.push(-1); // -1 represents Bye
+
+    const numTeams = indices.length; // Now even
+    const numRounds = numTeams - 1;
+
+    // If roundNumber > numRounds, we cycle or stop? 
+    // Usually Round Robin is 1 set of rounds. Double Round Robin is 2 sets.
+    // Let's assume single Round Robin for now.
+    // If roundNumber > numRounds, we return empty or cycle?
+    // Let's cycle for "infinite" play if requested, but standard is stop.
+    // But the context allows "nextRound" indefinitely.
+    // Let's wrap around: (roundNumber - 1) % numRounds + 1
+
+    const effectiveRound = (roundNumber - 1) % numRounds;
+
+    // Rotate indices for the current round
+    // We keep index 0 fixed, and rotate the rest (1..end)
+    // Rotation amount = effectiveRound
+
+    const movingIndices = indices.slice(1);
+    // Rotate right by effectiveRound? Or left?
+    // Standard: Rotate clockwise (right)
+    // [1, 2, 3] -> shift 1 -> [3, 1, 2]
+
+    for (let k = 0; k < effectiveRound; k++) {
+        const last = movingIndices.pop();
+        if (last !== undefined) movingIndices.unshift(last);
+    }
+
+    const currentIndices = [indices[0], ...movingIndices];
+
+    // Pair: (0, N-1), (1, N-2), ...
+    const half = numTeams / 2;
+    for (let i = 0; i < half; i++) {
+        const idx1 = currentIndices[i];
+        const idx2 = currentIndices[numTeams - 1 - i];
+
+        // If either is -1, it's a Bye
+        if (idx1 === -1 || idx2 === -1) {
+            const teamIdx = idx1 === -1 ? idx2 : idx1;
+            const team = sortedTeams[teamIdx];
+            matches.push({
+                id: crypto.randomUUID(),
+                round: roundNumber,
+                teamAId: team.id,
+                teamBId: 'BYE',
+                isCompleted: true,
+                result: { board1: 1, board2: 1 },
+                tableNumber: 0
+            });
+        } else {
+            const team1 = sortedTeams[idx1];
+            const team2 = sortedTeams[idx2];
+            matches.push({
+                id: crypto.randomUUID(),
+                round: roundNumber,
+                teamAId: team1.id,
+                teamBId: team2.id,
+                isCompleted: false,
+                tableNumber: matches.length + 1
+            });
+        }
+    }
+
+    return matches;
+}
+
+function generateSwissRound(roundNumber: number, teams: Team[], previousRounds: Round[]): Match[] {
     // Deep copy teams to avoid mutating state directly during sorting
     let sortedTeams = [...teams].filter(t => t.active);
 
@@ -27,14 +137,11 @@ export function generateRound(roundNumber: number, teams: Team[], previousRounds
     // We will use Neighbor pairing (1vs2, 3vs4) for simplicity in this MVP as it works well for small pools.
 
     // Handling odd number of teams -> Bye
-    // (For now assuming even or handling bye simply)
     if (sortedTeams.length % 2 !== 0) {
         // The lowest ranked player who hasn't had a bye gets it. 
         // For MVP, just pick the last one.
         const byeTeam = sortedTeams.pop();
         if (byeTeam) {
-            // In a real app, we'd record the Bye. For now, we just leave them out of the matches array 
-            // or create a "Bye" match. Let's create a Bye match for tracking.
             matches.push({
                 id: crypto.randomUUID(),
                 round: roundNumber,
