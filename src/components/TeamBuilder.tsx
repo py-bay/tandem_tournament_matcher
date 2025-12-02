@@ -4,7 +4,7 @@ import { Users, Play, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 
 export function TeamBuilder() {
-    const { state, createTeams, disbandTeam, startTournament } = useTournament();
+    const { state, createTeams, disbandTeam, startTournament, toggleWeightedFirstGame } = useTournament();
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
     const [mode, setMode] = useState<'swiss' | 'round_robin'>('swiss');
@@ -162,6 +162,22 @@ export function TeamBuilder() {
                             />
                         </div>
                     )}
+                    <div className="col-span-full pt-2">
+                        <label className="flex items-start gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                            <input
+                                type="checkbox"
+                                checked={state.weightedFirstGame || false}
+                                onChange={toggleWeightedFirstGame}
+                                className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                                <span className="block text-sm font-medium text-slate-700">Weighted Board 1</span>
+                                <span className="block text-xs text-slate-500 mt-0.5">
+                                    Board 1 win awards 2 points, Board 2 awards 1 point. (Results: 3:0, 2:1, etc.)
+                                </span>
+                            </div>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -179,6 +195,6 @@ export function TeamBuilder() {
                     <p className="text-center text-xs text-slate-400 mt-2">Need at least 2 teams to start.</p>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

@@ -12,6 +12,7 @@ interface TournamentContextType {
     submitMatchResult: (matchId: string, result: MatchResult) => void;
     disbandTeam: (teamId: string) => void;
     resetTournament: () => void;
+    toggleWeightedFirstGame: () => void;
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined);
@@ -24,6 +25,7 @@ const INITIAL_STATE: TournamentState = {
     currentRound: 0,
     status: 'setup',
     mode: 'swiss',
+    weightedFirstGame: false,
 };
 
 export function TournamentProvider({ children }: { children: React.ReactNode }) {
@@ -114,11 +116,25 @@ export function TournamentProvider({ children }: { children: React.ReactNode }) 
 
                 if (teamA) {
                     // Team Stats
-                    const points = match.result.board1 + match.result.board2;
+                    let b1Points = match.result.board1;
+                    let b2Points = match.result.board2;
+
+                    // Points are already weighted in the match result if applicable
+
+                    const points = b1Points + b2Points;
                     teamA.teamScore += points;
                     teamA.matchesPlayed += 1;
-                    if (points > 1) teamA.matchPoints += 2; // Win
-                    else if (points === 1) teamA.matchPoints += 1; // Draw
+
+                    const totalAvailable = currentState.weightedFirstGame ? 3 : 2;
+                    const threshold = totalAvailable / 2;
+
+                    if (currentState.weightedFirstGame) {
+                        // In weighted mode, Match Points = Team Score (Game Points)
+                        teamA.matchPoints += points;
+                    } else {
+                        if (points > threshold) teamA.matchPoints += 2; // Win
+                        else if (points === threshold) teamA.matchPoints += 1; // Draw
+                    }
 
                     // Player Stats (Assuming Board 1 is Player 1, Board 2 is Player 2 for simplicity? 
                     // Or do we track who played which board? 
@@ -134,45 +150,106 @@ export function TournamentProvider({ children }: { children: React.ReactNode }) 
                     if (p1) {
                         p1.matchesPlayed += 1;
                         p1.individualScore += match.result.board1;
-                        if (match.result.board1 === 1) p1.wins += 1;
-                        else if (match.result.board1 === 0.5) p1.draws += 1;
+                        // Check for Win (Full points) or Draw (Half points)
+                        // If weighted (2 pts), 2 is Win, 1 is Draw? No, 1 is Draw in weighted?
+                        // Actually, if board1 is weighted: Win=2, Draw=1, Loss=0.
+                        // If board1 is unweighted: Win=1, Draw=0.5, Loss=0.
+                        // We can infer max points for Board 1 too.
+
+                        let b1Max = 1;
+                        if (currentState.weightedFirstGame && (match.result.board1 > 1 || (match.result.board1 === 1 && match.result.board2 === 0.5))) {
+                            b1Max = 2;
+                        }
+
+                        if (match.result.board1 === b1Max) p1.wins += 1;
+                        else if (match.result.board1 === b1Max / 2) p1.draws += 1;
                         else p1.losses += 1;
                     }
                     if (p2) {
                         p2.matchesPlayed += 1;
                         p2.individualScore += match.result.board2;
-                        if (match.result.board2 === 1) p2.wins += 1;
-                        else if (match.result.board2 === 0.5) p2.draws += 1;
+
+                        let b2Max = 1;
+                        if (currentState.weightedFirstGame && (match.result.board2 > 1 || (match.result.board2 === 1 && match.result.board1 === 0.5))) {
+                            b2Max = 2;
+                        }
+
+                        if (match.result.board2 === b2Max) p2.wins += 1;
+                        else if (match.result.board2 === b2Max / 2) p2.draws += 1;
                         else p2.losses += 1;
                     }
                 }
 
                 if (teamB && match.teamBId !== 'BYE') {
-                    const points = (1 - match.result.board1) + (1 - match.result.board2); // Inverted result
+                    const totalAvailable = currentState.weightedFirstGame ? 3 : 2;
+                    const points = totalAvailable - (match.result.board1 + match.result.board2);
+
                     teamB.teamScore += points;
                     teamB.matchesPlayed += 1;
-                    if (points > 1) teamB.matchPoints += 2;
-                    else if (points === 1) teamB.matchPoints += 1;
+
+                    const threshold = totalAvailable / 2;
+
+                    if (currentState.weightedFirstGame) {
+                        teamB.matchPoints += points;
+                    } else {
+                        if (points > threshold) teamB.matchPoints += 2;
+                        else if (points === threshold) teamB.matchPoints += 1;
+                    }
 
                     const p1 = playersMap.get(teamB.player1Id);
                     const p2 = playersMap.get(teamB.player2Id);
 
-                    // Opponent Board 1 result is 1 - match.result.board1
-                    const b1Res = 1 - match.result.board1;
-                    const b2Res = 1 - match.result.board2;
+                    // Infer max points for each board to calculate opponent score
+                    // If weightedFirstGame is ON, we assume the board with > 1 points was the weighted one (max 2).
+                    // If neither > 1, it's ambiguous, but we can assume Board 1 if we must, or check if total score implies it.
+                    // Actually, if we use the "First Game" toggle in UI, we should probably store that metadata.
+                    // But for now, let's infer: if board1 > 1, max is 2. If board2 > 1, max is 2.
+                    // If both <= 1 in weighted mode? e.g. 1-0 (First game was 1-0? No, first game win is 2).
+                    // If first game was Draw (1-1), then board score is 1.
+                    // If second game was Draw (0.5-0.5), board score is 0.5.
+                    // So if score is 1, it could be First Game Draw OR Second Game Win.
+                    // This ambiguity is real. 
+                    // However, we can try to be consistent with the UI.
+                    // For now, let's assume Board 1 is weighted if ambiguous, as a fallback.
+
+                    let b1Max = 1;
+                    let b2Max = 1;
+
+                    if (currentState.weightedFirstGame) {
+                        // Try to detect which board is weighted
+                        if (match.result.board1 > 1 || (match.result.board1 === 1 && match.result.board2 === 0.5)) {
+                            b1Max = 2;
+                        } else if (match.result.board2 > 1 || (match.result.board2 === 1 && match.result.board1 === 0.5)) {
+                            b2Max = 2;
+                        } else {
+                            // Fallback: Board 1 is weighted if no clear indicator
+                            b1Max = 2;
+                        }
+                    }
+
+                    const b1Res = b1Max - match.result.board1;
+                    const b2Res = b2Max - match.result.board2;
 
                     if (p1) {
                         p1.matchesPlayed += 1;
                         p1.individualScore += b1Res;
-                        if (b1Res === 1) p1.wins += 1;
-                        else if (b1Res === 0.5) p1.draws += 1;
+                        // Win/Loss/Draw logic
+                        // If b1Res > b1Max/2 -> Win? No, Win is full point?
+                        // In weighted: Win=2, Draw=1, Loss=0.
+                        // In unweighted: Win=1, Draw=0.5, Loss=0.
+                        // So if b1Res == b1Max -> Win.
+                        // If b1Res == b1Max/2 -> Draw.
+                        // Else Loss.
+
+                        if (b1Res === b1Max) p1.wins += 1;
+                        else if (b1Res === b1Max / 2) p1.draws += 1;
                         else p1.losses += 1;
                     }
                     if (p2) {
                         p2.matchesPlayed += 1;
                         p2.individualScore += b2Res;
-                        if (b2Res === 1) p2.wins += 1;
-                        else if (b2Res === 0.5) p2.draws += 1;
+                        if (b2Res === b2Max) p2.wins += 1;
+                        else if (b2Res === b2Max / 2) p2.draws += 1;
                         else p2.losses += 1;
                     }
                 }
@@ -249,8 +326,15 @@ export function TournamentProvider({ children }: { children: React.ReactNode }) 
         }
     };
 
+    const toggleWeightedFirstGame = () => {
+        setState(prev => {
+            const newState = { ...prev, weightedFirstGame: !prev.weightedFirstGame };
+            return updateStats(newState);
+        });
+    };
+
     return (
-        <TournamentContext.Provider value={{ state, addPlayer, removePlayer, createTeams, startTournament, nextRound, submitMatchResult, disbandTeam, resetTournament }}>
+        <TournamentContext.Provider value={{ state, addPlayer, removePlayer, createTeams, startTournament, nextRound, submitMatchResult, disbandTeam, resetTournament, toggleWeightedFirstGame }}>
             {children}
         </TournamentContext.Provider>
     );

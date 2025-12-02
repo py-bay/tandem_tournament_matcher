@@ -110,7 +110,7 @@ export function StandingsTable() {
                                         {player.wins}/{player.draws}/{player.losses}
                                     </td>
                                     <td className="px-4 py-3 text-right text-slate-400 hidden sm:table-cell">
-                                        {player.matchesPlayed > 0 ? Math.round((player.individualScore / player.matchesPlayed) * 100) : 0}%
+                                        {player.matchesPlayed > 0 ? Math.round(((player.wins + player.draws * 0.5) / player.matchesPlayed) * 100) : 0}%
                                     </td>
                                 </tr>
                             ))}

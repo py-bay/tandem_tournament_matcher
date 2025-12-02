@@ -21,7 +21,7 @@ export interface Team {
 }
 
 export interface MatchResult {
-  board1: number; // 1 (White Win), 0 (Black Win), 0.5 (Draw)
+  board1: number; // 1 (White Win), 0 (Black Win), 0.5 (Draw), or weighted values (2, 1, etc.)
   board2: number;
 }
 
@@ -50,4 +50,5 @@ export interface TournamentState {
   status: 'setup' | 'active' | 'completed';
   mode: 'swiss' | 'round_robin';
   totalRounds?: number;
+  weightedFirstGame?: boolean;
 }
